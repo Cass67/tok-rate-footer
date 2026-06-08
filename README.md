@@ -19,6 +19,12 @@ Then run `/reload`.
 pi install git:github.com/Cass67/tok-rate-footer
 ```
 
+Pin a ref if you want a fixed version:
+
+```bash
+pi install git:github.com/Cass67/tok-rate-footer@main
+```
+
 ## Commands
 
 - `/tok-rate` show status
@@ -29,3 +35,4 @@ pi install git:github.com/Cass67/tok-rate-footer
 
 - Live rate uses streamed text/thinking/toolcall deltas.
 - Final rate prefers provider usage output when available.
+- Footer shows cache info when provider returns `usage.cacheRead` / `usage.cacheWrite`.

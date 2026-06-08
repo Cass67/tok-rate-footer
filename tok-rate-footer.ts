@@ -10,7 +10,59 @@
  *   /tok-rate reset     clear current measurement
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+type ExtensionContext = {
+  model?: { provider?: string; id: string };
+  ui: {
+    theme: { fg(color: string, text: string): string };
+    setStatus(key: string, value?: string): void;
+    notify(text: string, level?: "info" | "warn" | "error"): void;
+  };
+};
+
+type AssistantMessageEvent = {
+  type: "text_delta" | "thinking_delta" | "toolcall_delta";
+  delta: string;
+};
+
+type ExtensionAPI = {
+  on(
+    event: "session_start" | "model_select" | "agent_end",
+    handler: (_event: unknown, ctx: ExtensionContext) => void | Promise<void>,
+  ): void;
+  on(
+    event: "message_start",
+    handler: (
+      event: { message: { role: string } },
+      ctx: ExtensionContext,
+    ) => void | Promise<void>,
+  ): void;
+  on(
+    event: "message_update",
+    handler: (
+      event: { assistantMessageEvent: AssistantMessageEvent },
+      ctx: ExtensionContext,
+    ) => void | Promise<void>,
+  ): void;
+  on(
+    event: "message_end",
+    handler: (
+      event: {
+        message: {
+          role: string;
+          usage?: { output?: number; cacheRead?: number; cacheWrite?: number };
+        };
+      },
+      ctx: ExtensionContext,
+    ) => void | Promise<void>,
+  ): void;
+  registerCommand(
+    name: string,
+    config: {
+      description: string;
+      handler: (args: string, ctx: ExtensionContext) => void | Promise<void>;
+    },
+  ): void;
+};
 
 type StreamState = {
   active: boolean;
@@ -20,6 +72,8 @@ type StreamState = {
   estimatedTokens: number;
   finalTokens?: number;
   finalRate?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 };
 
 const STATUS_KEY = "tok-rate";
@@ -35,6 +89,24 @@ function fmtRate(rate: number | undefined): string {
   if (!Number.isFinite(rate ?? NaN)) return "--";
   const r = rate ?? 0;
   return r >= 100 ? r.toFixed(0) : r.toFixed(1);
+}
+
+function fmtCount(value: number | undefined): string {
+  if (!Number.isFinite(value ?? NaN)) return "--";
+  const n = value ?? 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return `${n.toFixed(0)}`;
+}
+
+function cacheSummary(state: StreamState): string | undefined {
+  const read = state.cacheRead ?? 0;
+  const write = state.cacheWrite ?? 0;
+  if (read <= 0 && write <= 0) return undefined;
+  const total = read + write;
+  const hitRate = total > 0 ? (read / total) * 100 : 0;
+  const hitLabel = read > 0 ? "HIT" : "MISS";
+  return `${hitLabel} R${fmtCount(read)} W${fmtCount(write)} CH ${hitRate.toFixed(0)}%`;
 }
 
 function rateFrom(state: StreamState, now = Date.now()): number | undefined {
@@ -60,9 +132,12 @@ function setStatus(
   }
 
   const rate = state.finalRate ?? rateFrom(state);
+  const base = `${fmtRate(rate)} tok/s`;
+  const cache = state.active ? undefined : cacheSummary(state);
+  const text = cache ? `${base} • ${cache}` : base;
   ctx.ui.setStatus(
     STATUS_KEY,
-    theme.fg(state.active ? "accent" : "success", fmtRate(rate)),
+    theme.fg(state.active ? "accent" : "success", text),
   );
 }
 
@@ -113,6 +188,8 @@ export default function (pi: ExtensionAPI) {
 
     const msg: any = event.message;
     const usageOutput = msg.usage?.output;
+    const cacheRead = msg.usage?.cacheRead;
+    const cacheWrite = msg.usage?.cacheWrite;
     const now = Date.now();
     const elapsed = Math.max(0.001, (now - state.startedAt) / 1000);
     state.active = false;
@@ -120,6 +197,8 @@ export default function (pi: ExtensionAPI) {
       typeof usageOutput === "number" && usageOutput > 0
         ? usageOutput
         : state.estimatedTokens;
+    state.cacheRead = typeof cacheRead === "number" ? cacheRead : 0;
+    state.cacheWrite = typeof cacheWrite === "number" ? cacheWrite : 0;
     state.finalRate = state.finalTokens / elapsed;
     state.lastAt = now;
     setStatus(ctx, state, enabled);
@@ -158,8 +237,9 @@ export default function (pi: ExtensionAPI) {
       }
 
       setStatus(ctx, state, enabled);
+      const cache = state ? cacheSummary(state) : undefined;
       const text = state
-        ? `${state.model}: ${fmtRate(state.finalRate ?? rateFrom(state))}`
+        ? `${state.model}: ${fmtRate(state.finalRate ?? rateFrom(state))} tok/s${cache ? ` • ${cache}` : ""}`
         : `${modelLabel(ctx)}: -- tok/s`;
       ctx.ui.notify(text, "info");
     },
