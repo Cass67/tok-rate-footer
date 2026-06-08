@@ -1,0 +1,18 @@
+{
+  "name": "tok-rate-footer",
+  "version": "0.1.0",
+  "description": "Pi extension that shows live tok/s in the footer",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "type": "module",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./tok-rate-footer.ts"
+    ]
+  }
+}
