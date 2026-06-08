@@ -16,7 +16,7 @@ Then run `/reload`.
 ### Git / package
 
 ```bash
-pi install git:github.com/<you>/tok-rate-footer
+pi install git:github.com/Cass67/tok-rate-footer
 ```
 
 ## Commands
