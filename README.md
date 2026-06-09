@@ -30,9 +30,11 @@ pi install git:github.com/Cass67/tok-rate-footer@main
 - `/tok-rate` show status
 - `/tok-rate on|off` enable/disable
 - `/tok-rate reset` clear current measurement
+- `/tok-rate details on|off` show/hide cache details in footer (default: off)
 
 ## Notes
 
 - Live rate uses streamed text/thinking/toolcall deltas.
 - Final rate prefers provider usage output when available.
-- Footer shows cache info when provider returns `usage.cacheRead` / `usage.cacheWrite`.
+- Footer defaults to rate-only (`tok/s`) to avoid duplicating provider/statusline details.
+- Footer can show cache info when enabled and provider returns `usage.cacheRead` / `usage.cacheWrite`.

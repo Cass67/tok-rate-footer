@@ -119,6 +119,7 @@ function setStatus(
   ctx: any,
   state: StreamState | null,
   enabled: boolean,
+  showDetails = false,
 ): void {
   if (!enabled) {
     ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -127,13 +128,13 @@ function setStatus(
 
   const theme = ctx.ui.theme;
   if (!state) {
-    ctx.ui.setStatus(STATUS_KEY, theme.fg("dim", "--"));
+    ctx.ui.setStatus(STATUS_KEY, theme.fg("dim", "tok/s"));
     return;
   }
 
   const rate = state.finalRate ?? rateFrom(state);
   const base = `${fmtRate(rate)} tok/s`;
-  const cache = state.active ? undefined : cacheSummary(state);
+  const cache = showDetails && !state.active ? cacheSummary(state) : undefined;
   const text = cache ? `${base} • ${cache}` : base;
   ctx.ui.setStatus(
     STATUS_KEY,
@@ -143,15 +144,16 @@ function setStatus(
 
 export default function (pi: ExtensionAPI) {
   let enabled = true;
+  let showDetails = false;
   let state: StreamState | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
-    setStatus(ctx, state, enabled);
+    setStatus(ctx, state, enabled, showDetails);
   });
 
   pi.on("model_select", async (_event, ctx) => {
     if (!state?.active) state = null;
-    setStatus(ctx, state, enabled);
+    setStatus(ctx, state, enabled, showDetails);
   });
 
   pi.on("message_start", async (event, ctx) => {
@@ -164,7 +166,7 @@ export default function (pi: ExtensionAPI) {
       lastAt: now,
       estimatedTokens: 0,
     };
-    setStatus(ctx, state, enabled);
+    setStatus(ctx, state, enabled, showDetails);
   });
 
   pi.on("message_update", async (event, ctx) => {
@@ -178,7 +180,7 @@ export default function (pi: ExtensionAPI) {
     ) {
       state.estimatedTokens += Math.max(0, ev.delta.length / CHARS_PER_TOKEN);
       state.lastAt = Date.now();
-      setStatus(ctx, state, enabled);
+      setStatus(ctx, state, enabled, showDetails);
     }
   });
 
@@ -201,7 +203,7 @@ export default function (pi: ExtensionAPI) {
     state.cacheWrite = typeof cacheWrite === "number" ? cacheWrite : 0;
     state.finalRate = state.finalTokens / elapsed;
     state.lastAt = now;
-    setStatus(ctx, state, enabled);
+    setStatus(ctx, state, enabled, showDetails);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
@@ -209,34 +211,46 @@ export default function (pi: ExtensionAPI) {
       state.active = false;
       state.finalRate = rateFrom(state);
     }
-    setStatus(ctx, state, enabled);
+    setStatus(ctx, state, enabled, showDetails);
   });
 
   pi.registerCommand("tok-rate", {
     description:
-      "Show or toggle model token/sec footer status (usage: /tok-rate [on|off|reset])",
+      "Show or toggle model token/sec footer status (usage: /tok-rate [on|off|reset|details on|details off])",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "off" || arg === "disable") {
         enabled = false;
-        setStatus(ctx, state, enabled);
+        setStatus(ctx, state, enabled, showDetails);
         ctx.ui.notify("tok-rate footer disabled", "info");
         return;
       }
       if (arg === "on" || arg === "enable") {
         enabled = true;
-        setStatus(ctx, state, enabled);
+        setStatus(ctx, state, enabled, showDetails);
         ctx.ui.notify("tok-rate footer enabled", "info");
         return;
       }
       if (arg === "reset") {
         state = null;
-        setStatus(ctx, state, enabled);
+        setStatus(ctx, state, enabled, showDetails);
         ctx.ui.notify("tok-rate footer reset", "info");
         return;
       }
+      if (arg === "details on" || arg === "details enable") {
+        showDetails = true;
+        setStatus(ctx, state, enabled, showDetails);
+        ctx.ui.notify("tok-rate footer details enabled", "info");
+        return;
+      }
+      if (arg === "details off" || arg === "details disable") {
+        showDetails = false;
+        setStatus(ctx, state, enabled, showDetails);
+        ctx.ui.notify("tok-rate footer details disabled", "info");
+        return;
+      }
 
-      setStatus(ctx, state, enabled);
+      setStatus(ctx, state, enabled, showDetails);
       const cache = state ? cacheSummary(state) : undefined;
       const text = state
         ? `${state.model}: ${fmtRate(state.finalRate ?? rateFrom(state))} tok/s${cache ? ` • ${cache}` : ""}`
